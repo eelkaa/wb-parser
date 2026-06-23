@@ -1,168 +1,169 @@
 # wb-parser
 
 Laravel-проект для выгрузки данных из Wildberries API и сохранения в MySQL.
+Поддерживает **мультиаккаунтность**, хранит данные как в нормализованных таблицах,
+так и в JSON (`data_records`). Разворачивается через **Docker Compose**.
 
-\---
+---
 
-## Быстрый старт
+## Быстрый старт (Docker)
 
 ```bash
-git clone https://github.com/YOUR\_NAME/wb-parser.git
+git clone https://github.com/eelkaa/wb-parser.git
 cd wb-parser
-composer install
 cp .env.example .env
-php artisan key:generate
+# Отредактируй .env: добавь WB_KEY и при необходимости WB_HOST
+docker-compose up --build -d
+docker exec php_app php artisan migrate
 ```
 
-Заполни `.env` (см. раздел «Конфигурация»), затем:
-
-```bash
-php artisan migrate
-php artisan wb:fetch
-```
-
-\---
+---
 
 ## Конфигурация (.env)
 
-|Переменная|Описание|Значение по умолчанию|
-|-|-|-|
-|`DB\_HOST`|Хост MySQL|`127.0.0.1`|
-|`DB\_PORT`|Порт MySQL|`3306`|
-|`DB\_DATABASE`|Имя базы данных|`wb\_parser`|
-|`DB\_USERNAME`|Пользователь MySQL|`root`|
-|`DB\_PASSWORD`|Пароль MySQL|*(пусто)*|
-|`WB\_HOST`|Хост WB API|`109.73.206.144:6969`|
-|`WB\_KEY`|API-ключ|`E6kUTYrYwZq2tN4QEtyzsbEBk3ie`|
-|`WB\_DATE\_FROM`|Начало периода выгрузки|`2024-01-01`|
-|`WB\_DATE\_TO`|Конец периода выгрузки|текущая дата|
-|`WB\_LIMIT`|Записей на страницу (макс. 500)|`500`|
+| Переменная      | Описание                          | Значение по умолчанию               |
+|-----------------|-----------------------------------|-------------------------------------|
+| `DB_HOST`       | Хост MySQL (внутри Docker)        | `mysql`                             |
+| `DB_PORT`       | Порт MySQL (внутри контейнера)    | `3306`                              |
+| `DB_DATABASE`   | Имя базы данных                   | `wb_parser`                         |
+| `DB_USERNAME`   | Пользователь MySQL                | `wb_user`                           |
+| `DB_PASSWORD`   | Пароль MySQL                      | `wb_pass`                           |
+| `WB_HOST`       | Хост WB API                       | `statistics-api.wildberries.ru`     |
+| `WB_KEY`        | API-ключ (или хранится в `tokens`)| *(пусто)*                           |
+| `WB_DATE_FROM`  | Начало периода выгрузки           | `2024-01-01`                        |
+| `WB_LIMIT`      | Записей на страницу (макс. 500)   | `500`                               |
+| `WB_RETRY_TIMES`| Число попыток при 429             | `3`                                 |
+| `WB_RETRY_SLEEP`| Пауза перед 1-й повторной попыткой| `5` (сек, далее ×3: 5→15→45)       |
 
-\---
+> MySQL доступен снаружи контейнера на порту **3307**.
 
-## Команда выгрузки
+---
 
-### Выгрузить все данные
+## Структура базы данных
+
+### Управляющие таблицы
+
+```
+companies       — компании
+accounts        — аккаунты (у компании может быть несколько)
+api_services    — API-сервисы (например: Wildberries)
+token_types     — типы токенов (например: Statistics)
+tokens          — токены аккаунтов (UNIQUE: account+service+type)
+```
+
+### Таблицы данных WB
+
+```
+orders          — заказы
+sales           — продажи и возвраты
+stocks          — остатки товаров
+incomes         — поставки
+report_details  — детализация финансового отчёта
+data_records    — все данные в JSON параллельно (для аналитики)
+```
+
+---
+
+## Консольные команды
+
+### Управление сущностями
 
 ```bash
-php artisan wb:fetch
+# Добавить компанию
+php artisan entity:company --name="ООО Ромашка"
+
+# Добавить аккаунт к компании
+php artisan entity:account --company=1 --name="Основной"
+
+# Добавить API-сервис
+php artisan entity:api-service --name="Wildberries" --description="Статистика WB"
+
+# Добавить тип токена
+php artisan entity:token-type --name="Statistics" --description="x-statisticss-token"
+
+# Добавить токен для аккаунта
+php artisan entity:token --account=1 --service=1 --type=1 --value="ВАШ_ТОКЕН"
 ```
 
-### Выгрузить за конкретный период
+> Все команды работают в **интерактивном режиме** — если не передать опции, они спросят.
+
+### Выгрузка данных
 
 ```bash
-php artisan wb:fetch --dateFrom=2024-03-01 --dateTo=2024-03-31
+# Выгрузить данные для ВСЕХ аккаунтов (запускается по cron)
+php artisan wb:fetch:all
+
+# Выгрузить для конкретного аккаунта
+php artisan wb:fetch --account=1
+
+# Выгрузить за конкретный период
+php artisan wb:fetch --account=1 --dateFrom=2024-03-01 --dateTo=2024-03-31
+
+# Выгрузить только один эндпоинт
+php artisan wb:fetch --account=1 --endpoint=orders
 ```
 
-### Выгрузить только один эндпоинт
+### Автоматическое расписание
+
+Cron запускает `wb:fetch:all` **дважды в день** — в **06:00** и **18:00**.
+Реализовано через `schedule:work` в supervisord и системный crontab.
+
+---
+
+## API-эндпоинты WB
+
+| Эндпоинт       | URL                   | Описание                          |
+|----------------|-----------------------|-----------------------------------|
+| `orders`       | `/api/orders`         | Заказы                            |
+| `sales`        | `/api/sales`          | Продажи и возвраты                |
+| `stocks`       | `/api/stocks`         | Остатки товаров                   |
+| `incomes`      | `/api/incomes`        | Поставки                          |
+| `reportDetail` | `/api/reportDetail`   | Детализация финансового отчёта    |
+
+---
+
+## Работа с Docker
 
 ```bash
-php artisan wb:fetch --endpoint=orders
-php artisan wb:fetch --endpoint=sales
-php artisan wb:fetch --endpoint=stocks
-php artisan wb:fetch --endpoint=incomes
-php artisan wb:fetch --endpoint=reportDetail
+# Запуск
+docker-compose up -d
+
+# Остановка
+docker-compose down
+
+# Логи PHP-контейнера
+docker logs -f php_app
+
+# Подключение к MySQL (снаружи контейнера)
+mysql -h 127.0.0.1 -P 3307 -u wb_user -pwb_pass wb_parser
+
+# Выполнить миграции
+docker exec php_app php artisan migrate
+
+# Статус миграций
+docker exec php_app php artisan migrate:status
+
+# Ручной запуск выгрузки
+docker exec php_app php artisan wb:fetch:all
 ```
 
-\---
+---
 
-## API-эндпоинты
+## Мультиаккаунтность
 
-|Эндпоинт|URL|Описание|
-|-|-|-|
-|`orders`|`/api/orders`|Заказы|
-|`sales`|`/api/sales`|Продажи и возвраты|
-|`stocks`|`/api/stocks`|Остатки товаров|
-|`incomes`|`/api/incomes`|Поставки|
-|`reportDetail`|`/api/reportDetail`|Детализация финансового отчёта|
+1. Создать компанию: `entity:company`
+2. Создать аккаунт: `entity:account`
+3. Создать сервис WB: `entity:api-service --name="Wildberries"`
+4. Создать тип токена: `entity:token-type --name="Statistics"`
+5. Добавить токен: `entity:token`
+6. Запустить выгрузку: `wb:fetch:all`
 
-Все эндпоинты принимают параметры: `dateFrom`, `dateTo`, `page`, `limit`, `key`.
+Данные каждого аккаунта хранятся отдельно (поле `account_id`) — данные из разных аккаунтов не перезаписывают друг друга.
 
-\---
+---
 
-## Таблицы базы данных
+## Обработка ошибок
 
-|Таблица|Уникальный ключ|Основные поля|
-|-|-|-|
-|`orders`|`order\_id`|date, supplier\_article, nm\_id, total\_price, is\_cancel, brand|
-|`sales`|`sale\_id`|date, nm\_id, total\_price, for\_pay, brand, warehouse\_name|
-|`stocks`|`nm\_id + warehouse\_name`|quantity, quantity\_full, in\_way\_to\_client, price, discount|
-|`incomes`|`income\_id`|date, quantity, total\_price, status, warehouse\_name|
-|`report\_details`|`rrd\_id`|doc\_type\_name, retail\_amount, ppvz\_for\_pay, penalty|
-
-Каждая таблица содержит колонку `raw` (JSON) — полная исходная запись из API.  
-Схема SQL: `database/schema.sql`.
-
-\---
-
-## Доступы к БД (free-tier, PlanetScale / Railway / FreeSQLdatabase)
-
-> ⚠️ Заполни после развёртывания на хостинге
-
-```
-Host:     yamanote.proxy.rlwy.net
-
-Port:     57959
-
-Database: railway
-
-User:     root
-
-Password: sTuvshSoBczQJXgZvQWTBojIPpWKNdiv
-
-```
-
-**Бесплатные хостинги для MySQL:**
-
-* [Railway.app](https://railway.app) — 500 МБ бесплатно, подключение через стандартный DSN
-* [PlanetScale](https://planetscale.com) — 5 ГБ бесплатно, MySQL-совместимый
-* [FreeSQLdatabase.com](https://www.freesqldatabase.com) — просто и бесплатно
-
-\---
-
-## Планировщик (автоматическая синхронизация)
-
-Добавь в crontab на сервере:
-
-```cron
-\* \* \* \* \* cd /path/to/wb-parser \&\& php artisan schedule:run >> /dev/null 2>\&1
-```
-
-По умолчанию команда `wb:fetch` запускается **каждый час**.  
-Изменить расписание — `app/Console/Kernel.php`, метод `schedule()`.
-
-\---
-
-## Структура проекта
-
-```
-app/
-  Console/
-    Commands/FetchWbData.php   # Artisan-команда выгрузки
-    Kernel.php                 # Регистрация команд и расписание
-  Models/
-    Order.php
-    Sale.php
-    Stock.php
-    Income.php
-    ReportDetail.php
-  Services/
-    WbApiService.php           # HTTP-клиент для WB API (пагинация, retry)
-config/
-  wb.php                       # Настройки подключения к API
-database/
-  migrations/                  # Laravel-миграции
-  schema.sql                   # Готовый SQL-дамп (альтернатива migrate)
-```
-
-\---
-
-## Развёртывание на Railway (пример)
-
-1. Зарегистрируйся на [railway.app](https://railway.app)
-2. New Project → Deploy from GitHub → выбери репозиторий
-3. Добавь MySQL-сервис: + New → Database → MySQL
-4. Скопируй `DATABASE\_URL` из переменных MySQL-сервиса
-5. Добавь переменные окружения (`WB\_HOST`, `WB\_KEY`, даты)
-6. В разделе Deploy → Start Command: `php artisan migrate --force \&\& php artisan wb:fetch`
-
+- **429 Too Many Requests** — автоматические повторные попытки (3 раза, паузы 5→15→45 сек)
+- Все ошибки выводятся в консоль и записываются в `storage/logs/laravel.log`
+- Лог cron-выгрузки: `storage/logs/wb-fetch.log`

@@ -3,10 +3,12 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ReportDetail extends Model
 {
     protected $fillable = [
+        'account_id',
         'rrd_id', 'date_from', 'date_to', 'create_dt', 'supplier_name',
         'doc_type_name', 'quantity_x', 'retail_price', 'retail_amount',
         'sale_percent', 'commission_percent', 'supplier_oper_name',
@@ -20,4 +22,14 @@ class ReportDetail extends Model
         'bonus_type_name', 'sticker_id', 'site_country', 'penalty',
         'additional_payment', 'nm_id', 'brand_name', 'subject_name', 'raw',
     ];
+
+    public function account(): BelongsTo
+    {
+        return $this->belongsTo(Account::class);
+    }
+
+    public static function getLastDate(int $accountId): ?string
+    {
+        return static::where('account_id', $accountId)->max('date_from');
+    }
 }

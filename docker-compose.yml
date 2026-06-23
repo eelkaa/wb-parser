@@ -1,0 +1,45 @@
+version: '3.8'
+services:
+  php:
+    build: .
+    container_name: php_app
+    volumes:
+      - .:/var/www/html
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      APP_ENV: local
+      APP_KEY: ${APP_KEY}
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_DATABASE: wb_parser
+      DB_USERNAME: wb_user
+      DB_PASSWORD: wb_pass
+      WB_HOST: ${WB_HOST:-statistics-api.wildberries.ru}
+      WB_KEY: ${WB_KEY:-}
+    restart: unless-stopped
+
+  mysql:
+    image: mysql:8.0
+    container_name: mysql_db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: wb_parser
+      MYSQL_USER: wb_user
+      MYSQL_PASSWORD: wb_pass
+    ports:
+      - "3307:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+volumes:
+  db_data:
