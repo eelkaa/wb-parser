@@ -98,6 +98,13 @@ class FetchWbData extends Command
             }
         }
 
+        // stocks — текущие остатки, API требует дату не ранее вчера
+        if ($endpoint === 'stocks') {
+            $dateFrom = Carbon::yesterday()->format('Y-m-d');
+            $this->info("  [{$endpoint}] Актуальные остатки с: {$dateFrom} (вчера)");
+            return $dateFrom;
+        }
+
         // Иначе — дата из .env
         $dateFrom = config('wb.date_from', '2024-01-01');
         $this->info("  [{$endpoint}] Начало с: {$dateFrom} (из .env)");
