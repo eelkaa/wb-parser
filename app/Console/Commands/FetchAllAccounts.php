@@ -43,7 +43,8 @@ class FetchAllAccounts extends Command
 
         foreach ($accounts as $account) {
             $this->line('');
-            $this->info("━━━ Аккаунт #{$account->id}: {$account->name} (компания: {$account->company->name ?? '—'}) ━━━");
+            $companyName = $account->company->name ?? '—';
+            $this->info("━━━ Аккаунт #{$account->id}: {$account->name} (компания: {$companyName}) ━━━");
 
             $result = $this->call('wb:fetch', [
                 '--account'  => $account->id,
