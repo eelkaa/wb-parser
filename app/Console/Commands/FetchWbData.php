@@ -27,14 +27,11 @@ class FetchWbData extends Command
     protected ?Account $account = null;
     protected WbApiService $api;
 
-    public function __construct(WbApiService $api)
-    {
-        parent::__construct();
-        $this->api = $api;
-    }
-
     public function handle(): int
     {
+        // Инициализируем API-сервис
+        $this->api = app(WbApiService::class);
+
         // Загрузка аккаунта
         $accountId = $this->option('account');
         if ($accountId) {

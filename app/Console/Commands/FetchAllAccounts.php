@@ -8,15 +8,13 @@ use Illuminate\Console\Command;
 
 class FetchAllAccounts extends Command
 {
-    protected $signature = 'wb:fetch:all {--dateFrom=} {--dateTo=} {--endpoint=} {--account=}';
-
+    protected $signature = 'wb:fetch:all
+                            {--dateFrom= : Дата ОТ (YYYY-MM-DD), по умолчанию — свежие данные из БД}
+                            {--dateTo=   : Дата ДО (YYYY-MM-DD), по умолчанию — сегодня}
+                            {--endpoint= : Конкретный эндпоинт: orders|sales|stocks|incomes|reportDetail}
+                            {--account=  : ID конкретного аккаунта (по умолчанию — все)}';
 
     protected $description = 'Выгрузить данные WB для всех аккаунтов (запускается по cron)';
-
-    public function __construct(protected WbApiService $api)
-    {
-        parent::__construct();
-    }
 
     public function handle(): int
     {
